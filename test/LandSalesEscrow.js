@@ -1,72 +1,96 @@
 // Import Chai assertion library
-// Used to verify expected results in tests
+// Used to verify that expected results are correct
 const { expect } = require("chai");
 
-// Import Hardhat's ethers library
-// Used to deploy contracts and interact with them
+// Import Ethers.js from Hardhat
+// Used to deploy and interact with smart contracts
 const { ethers } = require("hardhat");
 
 // Test suite for the LandSaleEscrow contract
 describe("LandSaleEscrow", function () {
 
-  // Variables that will be used across all tests
+  // Variables accessible throughout the test suite
   let contract;
   let registrar;
   let seller;
   let buyer;
 
-  // Runs before each test case
-  // Creates a fresh contract deployment every time
+  // Runs before every test case
   beforeEach(async function () {
 
-    // Get test accounts provided by Hardhat
-    // Account[0] = registrar (contract deployer)
-    // Account[1] = seller
-    // Account[2] = buyer
+    // Get three test accounts from Hardhat
+    // registrar = contract deployer/admin
+    // seller = land owner
+    // buyer = person purchasing land
     [registrar, seller, buyer] =
       await ethers.getSigners();
 
     // Get the contract factory
-    // Factory is used to deploy new contract instances
+    // A factory is used to deploy contract instances
     const LandSaleEscrow =
       await ethers.getContractFactory(
         "LandSaleEscrow"
       );
 
-    // Deploy the smart contract
-    // The deployer becomes the registrar because
-    // constructor sets registrar = msg.sender
+    // Deploy a fresh contract before each test
     contract =
       await LandSaleEscrow.deploy();
+
+    // Display account information
+    console.log("\n=================================");
+    console.log("Contract deployed");
+    console.log("Registrar:", registrar.address);
+    console.log("Seller:", seller.address);
+    console.log("Buyer:", buyer.address);
+    console.log("=================================\n");
   });
 
   // Test Case 1:
   // Verify that land registration works correctly
   it("Should register land", async function () {
 
-    // Seller registers a land
+    console.log("Registering Land...");
+
+    // Seller registers a new land
     await contract.connect(seller)
       .registerLand(
-        "Musanze",                 // location
-        500,                       // area
+        "Musanze",                 // land location
+        500,                       // land area
         ethers.parseEther("1")     // price = 1 ETH
       );
 
-    // Retrieve land information using land ID = 1
-    const land =
-      await contract.getLand(1);
+    // Retrieve land information using Land ID = 1
+    const land = await contract.getLand(1);
 
-    // Verify that the land owner is the seller
-    expect(
-      land.owner
-    ).to.equal(seller.address);
+    // Display stored land information
+    console.log("\nLAND DETAILS");
+    console.log("------------------------");
+    console.log("Land ID:", land.landId.toString());
+    console.log("Location:", land.location);
+    console.log("Area:", land.area.toString());
+    console.log("Owner:", land.owner);
+
+    // Convert Wei to ETH for readability
+    console.log(
+      "Price:",
+      ethers.formatEther(land.price),
+      "ETH"
+    );
+
+    console.log("For Sale:", land.forSale);
+    console.log("------------------------\n");
+
+    // Verify that seller became the owner
+    expect(land.owner)
+      .to.equal(seller.address);
   });
 
   // Test Case 2:
-  // Verify the complete land sale process
+  // Verify complete escrow workflow
   it("Should complete land sale", async function () {
 
-    // Step 1:
+    console.log("\nSTEP 1: Register Land");
+
     // Seller registers a land
     await contract.connect(seller)
       .registerLand(
@@ -75,38 +99,133 @@ describe("LandSaleEscrow", function () {
         ethers.parseEther("1")
       );
 
-    // Step 2:
-    // Seller lists the land for sale
+    // Read registered land information
+    let land = await contract.getLand(1);
+
+    console.log("Current Owner:", land.owner);
+
+    console.log("\nSTEP 2: List Land For Sale");
+
+    // Seller lists land for sale
     await contract.connect(seller)
       .listLandForSale(
-        1,                         // Land ID
-        ethers.parseEther("1")     // Selling price
+        1,                         // land ID
+        ethers.parseEther("1")     // selling price
       );
 
-    // Step 3:
-    // Buyer purchases the land
-    // Sends exactly 1 ETH to the contract
+    // Read updated land information
+    land = await contract.getLand(1);
+
+    console.log("For Sale:", land.forSale);
+
+    console.log(
+      "Price:",
+      ethers.formatEther(land.price),
+      "ETH"
+    );
+
+    console.log("\nSTEP 3: Buyer Purchases Land");
+
+    // Buyer deposits 1 ETH into escrow
     await contract.connect(buyer)
       .buyLand(
         1,
         {
+          // ETH sent with transaction
           value:
           ethers.parseEther("1")
         }
       );
 
-    // Step 4:
+    // Retrieve sale information
+    const sale =
+      await contract.getSale(1);
+
+    console.log("\nSALE DETAILS");
+    console.log("------------------------");
+
+    // Seller address
+    console.log("Seller:", sale.seller);
+
+    // Buyer address
+    console.log("Buyer:", sale.buyer);
+
+    // Display amount paid
+    console.log(
+      "Amount Paid:",
+      ethers.formatEther(
+        sale.amountPaid
+      ),
+      "ETH"
+    );
+
+    // Sale approval status
+    console.log("Approved:", sale.approved);
+
+    // Sale completion status
+    console.log("Completed:", sale.completed);
+
+    console.log("------------------------");
+
+    console.log("\nSTEP 4: Registrar Approves Sale");
+
     // Registrar approves the sale
-    // This transfers ownership and releases payment
-    await contract
-      .approveSale(1);
+    // Ownership transfers to buyer
+    // Payment is released to seller
+    await contract.approveSale(1);
 
-    // Step 5:
-    // Retrieve updated land information
-    const land =
-      await contract.getLand(1);
+    // Retrieve updated land details
+    land = await contract.getLand(1);
 
-    // Verify ownership changed from seller to buyer
+    console.log("\nUPDATED LAND DETAILS");
+    console.log("------------------------");
+
+    console.log(
+      "Land ID:",
+      land.landId.toString()
+    );
+
+    console.log(
+      "Location:",
+      land.location
+    );
+
+    console.log(
+      "Area:",
+      land.area.toString()
+    );
+
+    // New owner should be buyer
+    console.log(
+      "New Owner:",
+      land.owner
+    );
+
+    console.log(
+      "Price:",
+      ethers.formatEther(
+        land.price
+      ),
+      "ETH"
+    );
+
+    console.log(
+      "For Sale:",
+      land.forSale
+    );
+
+    console.log("------------------------");
+
+    // Get total completed transactions
+    const txCount =
+      await contract.getTransactionCount();
+
+    console.log(
+      "\nTransaction History Count:",
+      txCount.toString()
+    );
+
+    // Verify ownership was transferred
     expect(
       land.owner
     ).to.equal(buyer.address);
